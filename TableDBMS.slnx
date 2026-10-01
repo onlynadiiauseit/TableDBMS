@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="TableDBMS.Server/TableDBMS.Server.csproj" />
   <Project Path="TableDBMS.Tests/TableDBMS.Tests.csproj" />
   <Project Path="TableDBMS/TableDBMS.csproj" />
 </Solution>

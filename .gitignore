@@ -480,3 +480,8 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+TableDBMS.Server/Data/
+
+publish-server/
+publish-server.zip

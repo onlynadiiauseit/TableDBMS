@@ -1,0 +1,6 @@
+@TableDBMS.Server_HostAddress = http://localhost:5030
+
+GET {{TableDBMS.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

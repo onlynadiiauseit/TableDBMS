@@ -1,4 +1,4 @@
-using TableDBMS.Models;
+﻿using TableDBMS.Models;
 using TableDBMS.Services;
 using TableDBMS.Forms;
 namespace TableDBMS
@@ -7,7 +7,8 @@ namespace TableDBMS
     {
         private readonly TableUnionService _tableUnionService = new();
         private readonly StorageService _storageService = new();
-
+        private readonly RemoteStorageService _remoteStorageService =
+    new("http://192.168.0.100:5080");
         private Database? _database;
         private Table? _selectedTable;
         private string? _currentFilePath;
@@ -595,8 +596,6 @@ namespace TableDBMS
             );
             fileMenu.DropDownItems.Add(exitItem);
 
-            var databaseMenu =
-                new ToolStripMenuItem("База даних");
 
             var tableMenu =
     new ToolStripMenuItem("Таблиця");
@@ -666,8 +665,53 @@ namespace TableDBMS
             operationsMenu.DropDownItems.Add(
                 unionTablesItem
             );
+            var serverMenu =
+    new ToolStripMenuItem("Сервер");
+
+            var checkConnectionItem =
+                new ToolStripMenuItem(
+                    "Перевірити з'єднання"
+                );
+
+            checkConnectionItem.Click +=
+                async (_, _) =>
+                    await CheckServerConnectionAsync();
+
+            var saveToServerItem =
+                new ToolStripMenuItem(
+                    "Зберегти на сервері"
+                );
+
+            saveToServerItem.Click +=
+                async (_, _) =>
+                    await SaveDatabaseToServerAsync();
+
+            var openFromServerItem =
+                new ToolStripMenuItem(
+                    "Відкрити з сервера..."
+                );
+
+            openFromServerItem.Click +=
+                async (_, _) =>
+                    await OpenDatabaseFromServerAsync();
+
+            serverMenu.DropDownItems.Add(
+                checkConnectionItem
+            );
+
+            serverMenu.DropDownItems.Add(
+                new ToolStripSeparator()
+            );
+
+            serverMenu.DropDownItems.Add(
+                saveToServerItem
+            );
+            menuStrip.Items.Add(serverMenu);
+            serverMenu.DropDownItems.Add(
+                openFromServerItem
+            );
             menuStrip.Items.Add(fileMenu);
-            menuStrip.Items.Add(databaseMenu);
+
             menuStrip.Items.Add(tableMenu);
             menuStrip.Items.Add(operationsMenu);
 
@@ -1079,7 +1123,240 @@ namespace TableDBMS
                 );
             }
         }
+        private async Task CheckServerConnectionAsync()
+        {
+            try
+            {
+                _statusLabel.Text =
+                    "Перевірка з'єднання із сервером...";
 
+                bool connected =
+                    await _remoteStorageService
+                        .CheckConnectionAsync();
+
+                if (!connected)
+                {
+                    throw new InvalidOperationException(
+                        "Сервер повернув помилку."
+                    );
+                }
+
+                _statusLabel.Text =
+                    "З'єднання із сервером встановлено.";
+
+                MessageBox.Show(
+                    "З'єднання із сервером успішно встановлено.",
+                    "Сервер",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information
+                );
+            }
+            catch (Exception ex)
+            {
+                _statusLabel.Text =
+                    "Сервер недоступний.";
+
+                MessageBox.Show(
+                    $"Не вдалося підключитися до сервера.\n\n{ex.Message}",
+                    "Помилка з'єднання",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }
+        }
+
+        private async Task SaveDatabaseToServerAsync()
+        {
+            if (_database == null)
+            {
+                MessageBox.Show(
+                    "Спочатку створіть або відкрийте базу даних.",
+                    "Немає бази даних",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information
+                );
+
+                return;
+            }
+
+            try
+            {
+                _statusLabel.Text =
+                    "Збереження бази даних на сервері...";
+
+                await _remoteStorageService
+                    .SaveDatabaseAsync(_database);
+
+                _statusLabel.Text =
+                    $"Базу '{_database.Name}' збережено на сервері.";
+
+                MessageBox.Show(
+                    $"Базу даних '{_database.Name}' успішно збережено на сервері.",
+                    "Сервер",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information
+                );
+            }
+            catch (Exception ex)
+            {
+                _statusLabel.Text =
+                    "Помилка збереження на сервері.";
+
+                MessageBox.Show(
+                    $"Не вдалося зберегти базу даних на сервері.\n\n{ex.Message}",
+                    "Помилка",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }
+        }
+
+        private async Task OpenDatabaseFromServerAsync()
+        {
+            try
+            {
+                _statusLabel.Text =
+                    "Отримання списку баз із сервера...";
+
+                List<string> databaseNames =
+                    await _remoteStorageService
+                        .GetDatabaseNamesAsync();
+
+                if (databaseNames.Count == 0)
+                {
+                    MessageBox.Show(
+                        "На сервері немає збережених баз даних.",
+                        "Сервер",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information
+                    );
+
+                    _statusLabel.Text =
+                        "На сервері немає баз даних.";
+
+                    return;
+                }
+
+                string? selectedName =
+                    SelectRemoteDatabase(databaseNames);
+
+                if (string.IsNullOrWhiteSpace(selectedName))
+                    return;
+
+                _statusLabel.Text =
+                    $"Завантаження '{selectedName}'...";
+
+                _database =
+                    await _remoteStorageService
+                        .LoadDatabaseAsync(selectedName);
+
+                _selectedTable = null;
+                _currentFilePath = null;
+
+                RefreshDatabaseView();
+
+                _statusLabel.Text =
+                    $"Базу '{_database.Name}' завантажено із сервера.";
+            }
+            catch (Exception ex)
+            {
+                _statusLabel.Text =
+                    "Помилка завантаження із сервера.";
+
+                MessageBox.Show(
+                    $"Не вдалося відкрити базу даних із сервера.\n\n{ex.Message}",
+                    "Помилка",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }
+        }
+
+        private static string? SelectRemoteDatabase(
+            IReadOnlyList<string> databaseNames)
+        {
+            using var dialog = new Form
+            {
+                Text = "Відкрити з сервера",
+                Width = 430,
+                Height = 330,
+                StartPosition =
+                    FormStartPosition.CenterParent,
+                FormBorderStyle =
+                    FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false
+            };
+
+            var label = new Label
+            {
+                Left = 20,
+                Top = 20,
+                Width = 370,
+                Height = 25,
+                Text = "Оберіть базу даних:"
+            };
+
+            var listBox = new ListBox
+            {
+                Left = 20,
+                Top = 50,
+                Width = 370,
+                Height = 180
+            };
+
+            foreach (string databaseName in databaseNames)
+            {
+                listBox.Items.Add(databaseName);
+            }
+
+            if (listBox.Items.Count > 0)
+            {
+                listBox.SelectedIndex = 0;
+            }
+
+            var openButton = new Button
+            {
+                Text = "Відкрити",
+                Left = 210,
+                Top = 245,
+                Width = 85,
+                DialogResult = DialogResult.OK
+            };
+
+            var cancelButton = new Button
+            {
+                Text = "Скасувати",
+                Left = 305,
+                Top = 245,
+                Width = 85,
+                DialogResult = DialogResult.Cancel
+            };
+
+            listBox.DoubleClick += (_, _) =>
+            {
+                if (listBox.SelectedItem != null)
+                {
+                    dialog.DialogResult =
+                        DialogResult.OK;
+
+                    dialog.Close();
+                }
+            };
+
+            dialog.Controls.Add(label);
+            dialog.Controls.Add(listBox);
+            dialog.Controls.Add(openButton);
+            dialog.Controls.Add(cancelButton);
+
+            dialog.AcceptButton = openButton;
+            dialog.CancelButton = cancelButton;
+
+            return dialog.ShowDialog() ==
+                   DialogResult.OK
+                ? listBox.SelectedItem?.ToString()
+                : null;
+        }
         private void RefreshDatabaseView()
         {
             _tablesTree.Nodes.Clear();
@@ -1258,3 +1535,6 @@ namespace TableDBMS
         }
     }
 }
+
+
+
